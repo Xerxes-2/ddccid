@@ -117,14 +117,13 @@ dependencies = [
  "anyhow",
  "clap",
  "ddcutil",
+ "itertools",
  "serde_json",
 ]
 
 [[package]]
 name = "ddcutil"
 version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56f9105004e28752513ddef60b6cd504ff53470256ff92afd844fe0f2dad67f"
 dependencies = [
  "bitflags",
  "ddcutil-sys",
@@ -134,11 +133,15 @@ dependencies = [
 [[package]]
 name = "ddcutil-sys"
 version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7db52aecda31515de92a18f6069900695509c5aae3d0d58ceed5397f38098e6"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "heck"
@@ -151,6 +154,15 @@ name = "is_terminal_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
+
+[[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "itoa"

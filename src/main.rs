@@ -1,8 +1,9 @@
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use ddcutil::{DisplayInfo, DisplayInfoList};
+use ddcutil::{Display, DisplayInfo};
+use itertools::Itertools;
 use serde_json::json;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
@@ -46,7 +47,7 @@ const SOCKET_PATH: &str = "/tmp/ddcutil-brightness.sock";
 const PID_FILE: &str = "/tmp/ddcutil-brightness.pid";
 
 struct BrightnessManager {
-    displays: DisplayInfoList,
+    displays: Vec<Display>,
 }
 
 impl BrightnessManager {
@@ -55,11 +56,12 @@ impl BrightnessManager {
         if displays.len() == 0 {
             bail!("No DDC/CI-capable displays found")
         }
+        let displays = displays.into_iter().map(|info| info.open()).try_collect()?;
         Ok(BrightnessManager { displays })
     }
 
     fn get_brightness(&self) -> Result<u16> {
-        let brightness = self.displays.get(0).open()?.vcp_get_value(10)?;
+        let brightness = self.displays[0].vcp_get_value(0x10)?;
         Ok(brightness.value())
     }
 
@@ -76,23 +78,18 @@ impl BrightnessManager {
 
     fn set_brightness(&self, value: u16) -> Result<u16> {
         let clamped_value = std::cmp::min(100, value);
-        std::thread::scope(|s| {
-            for display in &self.displays {
-                s.spawn(move || {
-                    let display = display.open()?;
-                    display.vcp_set_raw(10, clamped_value)?;
-                    Ok::<(), anyhow::Error>(())
-                });
-            }
-        });
+        for display in &self.displays {
+            display.vcp_set_raw(0x10, clamped_value)?;
+        }
         Ok(clamped_value)
     }
 }
 
 fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>) {
     let mut line = String::new();
+    let mut reader = BufReader::new(&stream);
 
-    let Ok(_) = stream.read_to_string(&mut line) else {
+    let Ok(_) = reader.read_line(&mut line) else {
         return;
     };
     let command = line.trim();
@@ -197,6 +194,7 @@ fn send_command(command: &str) -> Result<String, Box<dyn std::error::Error>> {
 fn main() {
     let cli = Cli::parse();
 
+    let now = std::time::Instant::now();
     match cli.command {
         Commands::Daemon => {
             if let Err(e) = start_daemon() {
@@ -231,6 +229,7 @@ fn main() {
                 Ok(_) => {}
                 Err(_) => {
                     // Fallback to direct mode
+                    eprintln!("Daemon not running, adjusting brightness directly");
                     if let Ok(manager) = BrightnessManager::new() {
                         let _ = manager.adjust_brightness(step as i16);
                     }
@@ -271,4 +270,6 @@ fn main() {
             }
         }
     }
+    let elapsed = now.elapsed();
+    println!("Elapsed time: {:?}", elapsed);
 }
