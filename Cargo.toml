@@ -1,0 +1,16 @@
+[package]
+name = "ddccid"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+ddcutil = "0"
+serde_json = "1"
