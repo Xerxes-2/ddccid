@@ -1,7 +1,6 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
-use ddcutil::{Display, DisplayInfo};
-use itertools::Itertools;
+use ddccid::{BrightnessManager, DdcutilBackend};
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -46,46 +45,7 @@ enum Commands {
 const SOCKET_PATH: &str = "/tmp/ddcutil-brightness.sock";
 const PID_FILE: &str = "/tmp/ddcutil-brightness.pid";
 
-struct BrightnessManager {
-    displays: Vec<Display>,
-}
-
-impl BrightnessManager {
-    fn new() -> Result<Self> {
-        let displays = DisplayInfo::enumerate()?;
-        if displays.is_empty() {
-            bail!("No DDC/CI-capable displays found")
-        }
-        let displays = displays.into_iter().map(|info| info.open()).try_collect()?;
-        Ok(BrightnessManager { displays })
-    }
-
-    fn get_brightness(&self) -> Result<u16> {
-        let brightness = self.displays[0].vcp_get_value(0x10)?;
-        Ok(brightness.value())
-    }
-
-    fn adjust_brightness(&self, delta: i16) -> Result<u16> {
-        let current = self.get_brightness()?;
-        let new_value = if delta < 0 {
-            current.saturating_sub((-delta) as u16)
-        } else {
-            current.saturating_add(delta as u16)
-        };
-
-        self.set_brightness(new_value)
-    }
-
-    fn set_brightness(&self, value: u16) -> Result<u16> {
-        let clamped_value = std::cmp::min(100, value);
-        for display in &self.displays {
-            display.vcp_set_raw(0x10, clamped_value)?;
-        }
-        Ok(clamped_value)
-    }
-}
-
-fn format_result(res: Result<u16>) -> String {
+fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String {
     match res {
         Ok(val) => json!({
             "text": val.to_string(),
@@ -96,13 +56,13 @@ fn format_result(res: Result<u16>) -> String {
         Err(e) => json!({
             "text": "?",
             "percentage": 0,
-            "tooltip": format!("Error: {}", e)
+            "tooltip": format!("Error: {}", e.as_ref())
         })
         .to_string(),
     }
 }
 
-fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>) {
+fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<impl BrightnessManager>>) {
     let mut line = String::new();
     let mut reader = BufReader::new(&stream);
 
@@ -144,6 +104,8 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>)
     let _ = writeln!(stream, "{}", response);
 }
 
+type Backend = DdcutilBackend;
+
 fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
     // Check if daemon is already running
     if Path::new(SOCKET_PATH).exists() {
@@ -153,7 +115,7 @@ fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
     // Write PID file
     std::fs::write(PID_FILE, process::id().to_string())?;
 
-    let manager = Arc::new(Mutex::new(BrightnessManager::new()?));
+    let manager = Arc::new(Mutex::new(Backend::new()?));
     let listener = UnixListener::bind(SOCKET_PATH)?;
 
     println!("Daemon started, listening on {}", SOCKET_PATH);
@@ -205,7 +167,7 @@ fn main() {
                     eprintln!("Daemon not running, getting brightness directly");
                     println!(
                         "{}",
-                        format_result(BrightnessManager::new().and_then(|m| m.get_brightness()))
+                        format_result(Backend::new().and_then(|m| m.get_brightness()))
                     );
                 }
             }
@@ -219,7 +181,7 @@ fn main() {
                     println!(
                         "{}",
                         format_result(
-                            BrightnessManager::new().and_then(|m| m.adjust_brightness(step as i16))
+                            Backend::new().and_then(|m| m.adjust_brightness(step as i16))
                         )
                     );
                 }
@@ -234,8 +196,7 @@ fn main() {
                     println!(
                         "{}",
                         format_result(
-                            BrightnessManager::new()
-                                .and_then(|m| m.adjust_brightness(-(step as i16)))
+                            Backend::new().and_then(|m| m.adjust_brightness(-(step as i16)))
                         )
                     );
                 }
@@ -249,9 +210,7 @@ fn main() {
                     eprintln!("Daemon not running, setting brightness directly");
                     println!(
                         "{}",
-                        format_result(
-                            BrightnessManager::new().and_then(|m| m.set_brightness(value))
-                        )
+                        format_result(Backend::new().and_then(|m| m.set_brightness(value)))
                     );
                 }
             }

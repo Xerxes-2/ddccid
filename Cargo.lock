@@ -111,11 +111,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "ddc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1363c64a5107a51aa7a4198f7a0a61e3ae2347737ef26360dbd7f6025d6ee4f0"
+dependencies = [
+ "mccs",
+]
+
+[[package]]
 name = "ddccid"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "ddc",
  "ddcutil",
  "itertools",
  "serde_json",
@@ -177,6 +187,12 @@ name = "libc"
 version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+
+[[package]]
+name = "mccs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a63ab5297c9a7d5f8298a076b5f858c3c51ce84bf2f57a302d1d67ff9323360"
 
 [[package]]
 name = "memchr"
