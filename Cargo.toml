@@ -12,6 +12,6 @@ panic = "abort"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-ddcutil = { path = "../ddcutil-rs" }
+ddcutil = { git = "https://github.com/Xerxes-2/ddcutil-rs.git" }
 itertools = "0"
 serde_json = "1"

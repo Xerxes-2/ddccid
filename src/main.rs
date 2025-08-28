@@ -53,7 +53,7 @@ struct BrightnessManager {
 impl BrightnessManager {
     fn new() -> Result<Self> {
         let displays = DisplayInfo::enumerate()?;
-        if displays.len() == 0 {
+        if displays.is_empty() {
             bail!("No DDC/CI-capable displays found")
         }
         let displays = displays.into_iter().map(|info| info.open()).try_collect()?;
@@ -85,6 +85,23 @@ impl BrightnessManager {
     }
 }
 
+fn format_result(res: Result<u16>) -> String {
+    match res {
+        Ok(val) => json!({
+            "text": val.to_string(),
+            "percentage": val,
+            "tooltip": format!("Brightness: {}%", val)
+        })
+        .to_string(),
+        Err(e) => json!({
+            "text": "?",
+            "percentage": 0,
+            "tooltip": format!("Error: {}", e)
+        })
+        .to_string(),
+    }
+}
+
 fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>) {
     let mut line = String::new();
     let mut reader = BufReader::new(&stream);
@@ -94,26 +111,10 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>)
     };
     let command = line.trim();
     let response = match command {
-        "get" => match manager.lock().unwrap().get_brightness() {
-            Ok(brightness) => json!({
-                "text": brightness.to_string(),
-                "percentage": brightness,
-                "tooltip": format!("Brightness: {}%", brightness)
-            })
-            .to_string(),
-            Err(_) => json!({
-                "text": "?",
-                "percentage": 0,
-                "tooltip": "Error reading brightness"
-            })
-            .to_string(),
-        },
+        "get" => format_result(manager.lock().unwrap().get_brightness()),
         cmd if cmd.starts_with("up ") => {
             let step: u16 = cmd.strip_prefix("up ").unwrap_or("5").parse().unwrap_or(5);
-            match manager.lock().unwrap().adjust_brightness(step as i16) {
-                Ok(new_brightness) => format!("OK {}", new_brightness),
-                Err(e) => format!("ERROR {}", e),
-            }
+            format_result(manager.lock().unwrap().adjust_brightness(step as i16))
         }
         cmd if cmd.starts_with("down ") => {
             let step: u16 = cmd
@@ -121,10 +122,7 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>)
                 .unwrap_or("5")
                 .parse()
                 .unwrap_or(5);
-            match manager.lock().unwrap().adjust_brightness(-(step as i16)) {
-                Ok(new_brightness) => format!("OK {}", new_brightness),
-                Err(e) => format!("ERROR {}", e),
-            }
+            format_result(manager.lock().unwrap().adjust_brightness(-(step as i16)))
         }
         cmd if cmd.starts_with("set ") => {
             let value: u16 = cmd
@@ -132,10 +130,7 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<BrightnessManager>>)
                 .unwrap_or("50")
                 .parse()
                 .unwrap_or(50);
-            match manager.lock().unwrap().set_brightness(value) {
-                Ok(new_brightness) => format!("OK {}", new_brightness),
-                Err(e) => format!("ERROR {}", e),
-            }
+            format_result(manager.lock().unwrap().set_brightness(value))
         }
         "stop" => {
             let _ = writeln!(stream, "OK stopping");
@@ -207,54 +202,57 @@ fn main() {
                 Ok(response) => println!("{}", response),
                 Err(_) => {
                     // Fallback to direct mode if daemon not running
-                    match BrightnessManager::new().and_then(|m| m.get_brightness()) {
-                        Ok(brightness) => {
-                            let output = json!({
-                                "text": brightness.to_string(),
-                                "percentage": brightness,
-                                "tooltip": format!("Brightness: {}%", brightness)
-                            });
-                            println!("{}", output);
-                        }
-                        Err(e) => {
-                            eprintln!("Error: {}", e);
-                            process::exit(1);
-                        }
-                    }
+                    eprintln!("Daemon not running, getting brightness directly");
+                    println!(
+                        "{}",
+                        format_result(BrightnessManager::new().and_then(|m| m.get_brightness()))
+                    );
                 }
             }
         }
         Commands::Up { step } => {
             match send_command(&format!("up {}", step)) {
-                Ok(_) => {}
+                Ok(response) => println!("{}", response),
                 Err(_) => {
                     // Fallback to direct mode
                     eprintln!("Daemon not running, adjusting brightness directly");
-                    if let Ok(manager) = BrightnessManager::new() {
-                        let _ = manager.adjust_brightness(step as i16);
-                    }
+                    println!(
+                        "{}",
+                        format_result(
+                            BrightnessManager::new().and_then(|m| m.adjust_brightness(step as i16))
+                        )
+                    );
                 }
             }
         }
         Commands::Down { step } => {
             match send_command(&format!("down {}", step)) {
-                Ok(_) => {}
+                Ok(response) => println!("{}", response),
                 Err(_) => {
                     // Fallback to direct mode
-                    if let Ok(manager) = BrightnessManager::new() {
-                        let _ = manager.adjust_brightness(-(step as i16));
-                    }
+                    eprintln!("Daemon not running, adjusting brightness directly");
+                    println!(
+                        "{}",
+                        format_result(
+                            BrightnessManager::new()
+                                .and_then(|m| m.adjust_brightness(-(step as i16)))
+                        )
+                    );
                 }
             }
         }
         Commands::Set { value } => {
             match send_command(&format!("set {}", value)) {
-                Ok(_) => {}
+                Ok(response) => println!("{}", response),
                 Err(_) => {
                     // Fallback to direct mode
-                    if let Ok(manager) = BrightnessManager::new() {
-                        let _ = manager.set_brightness(value);
-                    }
+                    eprintln!("Daemon not running, setting brightness directly");
+                    println!(
+                        "{}",
+                        format_result(
+                            BrightnessManager::new().and_then(|m| m.set_brightness(value))
+                        )
+                    );
                 }
             }
         }

@@ -124,6 +124,7 @@ dependencies = [
 [[package]]
 name = "ddcutil"
 version = "0.0.3"
+source = "git+https://github.com/Xerxes-2/ddcutil-rs.git#817bf8c90d3ff8eee58ed0840e2db2c05d15c0de"
 dependencies = [
  "bitflags",
  "ddcutil-sys",
@@ -133,6 +134,7 @@ dependencies = [
 [[package]]
 name = "ddcutil-sys"
 version = "0.0.3"
+source = "git+https://github.com/Xerxes-2/ddcutil-rs.git#817bf8c90d3ff8eee58ed0840e2db2c05d15c0de"
 dependencies = [
  "libc",
 ]
