@@ -44,8 +44,8 @@ impl BrightnessManager for DdcHiBackend {
             .lock()
             .unwrap()
             .handle
-            .get_vcp_feature(0x10)
-            .map(|f| f.value())?;
+            .get_vcp_feature(0x10)?
+            .value();
 
         self.last_get.set(Some((now, brightness)));
         Ok(brightness)
