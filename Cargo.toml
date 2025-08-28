@@ -12,7 +12,13 @@ panic = "abort"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-ddc = "0.3.0"
-ddcutil = { git = "https://github.com/Xerxes-2/ddcutil-rs.git" }
+daemonize = "0"
+ddc-hi = { version = "0", optional = true }
+ddcutil = { git = "https://github.com/Xerxes-2/ddcutil-rs.git", optional = true }
 itertools = "0"
 serde_json = "1"
+
+[features]
+ddcutil = ["dep:ddcutil"]
+ddc-hi = ["dep:ddc-hi"]
+default = ["ddc-hi"]

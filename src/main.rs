@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use ddccid::{BrightnessManager, DdcutilBackend};
+use daemonize::Daemonize;
+use ddccid::*;
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -42,8 +43,10 @@ enum Commands {
     Stop,
 }
 
-const SOCKET_PATH: &str = "/tmp/ddcutil-brightness.sock";
-const PID_FILE: &str = "/tmp/ddcutil-brightness.pid";
+const SOCKET_PATH: &str = "/tmp/ddccid.sock";
+const PID_FILE: &str = "/tmp/ddccid.pid";
+const STDOUT: &str = "/tmp/ddccid.log";
+const STDERR: &str = "/tmp/ddccid.err";
 
 fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String {
     match res {
@@ -104,6 +107,10 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<impl BrightnessManag
     let _ = writeln!(stream, "{}", response);
 }
 
+#[cfg(feature = "ddc-hi")]
+type Backend = DdcHiBackend;
+
+#[cfg(feature = "ddcutil")]
 type Backend = DdcutilBackend;
 
 fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
@@ -112,26 +119,45 @@ fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Daemon already running (socket exists)".into());
     }
 
-    // Write PID file
-    std::fs::write(PID_FILE, process::id().to_string())?;
+    let stdout = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(STDOUT)?;
 
-    let manager = Arc::new(Mutex::new(Backend::new()?));
-    let listener = UnixListener::bind(SOCKET_PATH)?;
+    let stderr = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(STDERR)?;
 
-    println!("Daemon started, listening on {}", SOCKET_PATH);
+    let daemonize = Daemonize::new()
+        .pid_file(PID_FILE)
+        .chown_pid_file(true)
+        .working_directory("/tmp")
+        .stdout(stdout)
+        .stderr(stderr);
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                let manager_clone = Arc::clone(&manager);
-                thread::spawn(move || {
-                    handle_client(stream, manager_clone);
-                });
-            }
-            Err(err) => {
-                eprintln!("Error accepting connection: {}", err);
+    match daemonize.start() {
+        Ok(_) => {
+            let manager = Arc::new(Mutex::new(Backend::new()?));
+            let listener = UnixListener::bind(SOCKET_PATH)?;
+
+            println!("Daemon started, listening on {}", SOCKET_PATH);
+
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let manager_clone = Arc::clone(&manager);
+                        thread::spawn(move || {
+                            handle_client(stream, manager_clone);
+                        });
+                    }
+                    Err(err) => {
+                        eprintln!("Error accepting connection: {}", err);
+                    }
+                }
             }
         }
+        Err(e) => return Err(format!("Error daemonizing: {}", e).into()),
     }
 
     Ok(())
@@ -154,10 +180,8 @@ fn main() {
     let now = std::time::Instant::now();
     match cli.command {
         Commands::Daemon => {
-            if let Err(e) = start_daemon() {
-                eprintln!("Error starting daemon: {}", e);
-                process::exit(1);
-            }
+            start_daemon().expect("Failed to start daemon");
+            return;
         }
         Commands::Get => {
             match send_command("get") {
