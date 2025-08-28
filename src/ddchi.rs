@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 
@@ -10,11 +10,13 @@ use ddc_hi::{Ddc, Display};
 use crate::BrightnessManager;
 
 pub struct DdcHiBackend {
-    displays: Vec<Mutex<Display>>,
-    last_get: Cell<Option<(Instant, u16)>>,
+    displays: Vec<Arc<Mutex<Display>>>,
+    last_set: Cell<Instant>,
+    last_get: Cell<Instant>,
+    temp: Cell<u16>,
 }
 
-pub const GET_COOLDOWN: Duration = Duration::from_millis(100);
+const COOLDOWN: Duration = Duration::from_millis(200);
 
 impl BrightnessManager for DdcHiBackend {
     type Error = anyhow::Error;
@@ -22,42 +24,62 @@ impl BrightnessManager for DdcHiBackend {
         let displays = Display::enumerate()
             .into_iter()
             .map(Mutex::new)
+            .map(Arc::new)
             .collect::<Vec<_>>();
         if displays.is_empty() {
             bail!("No DDC/CI-capable displays found")
         }
+        let temp = displays[0]
+            .lock()
+            .unwrap()
+            .handle
+            .get_vcp_feature(0x10)?
+            .value();
+        let last = Instant::now();
         Ok(Self {
             displays,
-            last_get: Cell::new(None),
+            last_set: Cell::new(last),
+            last_get: Cell::new(last),
+            temp: Cell::new(temp),
         })
     }
 
     fn get_brightness(&self) -> Result<u16> {
-        let now = Instant::now();
-        if let Some((last_time, last_value)) = self.last_get.get() {
-            if now.duration_since(last_time) < GET_COOLDOWN {
-                return Ok(last_value);
-            }
+        if self.last_get.get().elapsed() < COOLDOWN {
+            return Ok(self.temp.get());
         }
-
         let brightness = self.displays[0]
             .lock()
             .unwrap()
             .handle
             .get_vcp_feature(0x10)?
             .value();
-
-        self.last_get.set(Some((now, brightness)));
+        let now = Instant::now();
+        self.last_get.set(now);
+        self.temp.set(brightness);
         Ok(brightness)
     }
 
     fn set_brightness(&self, value: u16) -> Result<u16> {
+        if self.last_set.get().elapsed() < COOLDOWN * 2 {
+            return Ok(self.temp.get());
+        }
         let clamped_value = std::cmp::min(100, value);
-        self.displays[0]
-            .lock()
-            .unwrap()
-            .handle
-            .set_vcp_feature(0x10, clamped_value)?;
+        std::thread::scope(|s| {
+            for d in self.displays.iter() {
+                let d = d.clone();
+                s.spawn(move || {
+                    let _ = d
+                        .lock()
+                        .unwrap()
+                        .handle
+                        .set_vcp_feature(0x10, clamped_value);
+                });
+            }
+        });
+        let now = Instant::now();
+        self.last_set.set(now);
+        self.temp.set(clamped_value);
         Ok(clamped_value)
     }
 
