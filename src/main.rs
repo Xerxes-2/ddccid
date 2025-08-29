@@ -2,13 +2,12 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use daemonize::Daemonize;
 use ddccid::*;
-use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
-use std::process;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::{any, process};
 
 #[derive(Parser)]
 #[command(name = "ddcutil-brightness")]
@@ -48,20 +47,15 @@ const PID_FILE: &str = "/tmp/ddccid.pid";
 const STDOUT: &str = "/tmp/ddccid.log";
 const STDERR: &str = "/tmp/ddccid.err";
 
-fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String {
+fn format_result(res: Result<u16, anyhow::Error>) -> String {
     match res {
-        Ok(val) => json!({
-            "text": val.to_string(),
-            "percentage": val,
-            "tooltip": format!("Brightness: {}%", val)
-        })
-        .to_string(),
-        Err(e) => json!({
-            "text": "?",
-            "percentage": 0,
-            "tooltip": format!("Error: {}", e.as_ref())
-        })
-        .to_string(),
+        Ok(val) => format!(
+            "{{\"text\": \"{val}\", \"percentage\": {val}, \"tooltip\": \"Brightness: {val}%\"}}"
+        ),
+        Err(e) => format!(
+            "{{\"text\": \"?\", \"percentage\": 0, \"tooltip\": \"Error: {}\"}}",
+            e
+        ),
     }
 }
 
@@ -113,7 +107,7 @@ type Backend = DdcHiBackend;
 #[cfg(feature = "ddcutil")]
 type Backend = DdcutilBackend;
 
-fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
+fn start_daemon() -> Result<(), anyhow::Error> {
     // Check if daemon is already running
     if Path::new(SOCKET_PATH).exists() {
         return Err("Daemon already running (socket exists)".into());
@@ -163,7 +157,7 @@ fn start_daemon() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn send_command(command: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn send_command(command: &str) -> Result<String, anyhow::Error> {
     let mut stream = UnixStream::connect(SOCKET_PATH)?;
     writeln!(stream, "{}", command)?;
 

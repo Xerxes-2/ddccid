@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
