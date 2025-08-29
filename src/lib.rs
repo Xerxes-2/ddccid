@@ -14,5 +14,13 @@ pub trait BrightnessManager {
         Self: Sized;
     fn get_brightness(&self) -> Result<u16, Self::Error>;
     fn set_brightness(&self, value: u16) -> Result<u16, Self::Error>;
-    fn adjust_brightness(&self, step: i16) -> Result<u16, Self::Error>;
+    fn adjust_brightness(&self, step: i16) -> Result<u16, Self::Error> {
+        let current = self.get_brightness()?;
+        let new_value = if step < 0 {
+            current.saturating_sub((-step) as u16)
+        } else {
+            current.saturating_add(step as u16)
+        };
+        self.set_brightness(new_value)
+    }
 }

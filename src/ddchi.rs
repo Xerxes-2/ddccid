@@ -10,7 +10,7 @@ use ddc_hi::{Ddc, Display};
 use crate::BrightnessManager;
 
 pub struct DdcHiBackend {
-    displays: Vec<Arc<Mutex<Display>>>,
+    displays: Vec<Mutex<Display>>,
     last_set: Cell<Instant>,
     last_get: Cell<Instant>,
     temp: Cell<u16>,
@@ -24,7 +24,6 @@ impl BrightnessManager for DdcHiBackend {
         let displays = Display::enumerate()
             .into_iter()
             .map(Mutex::new)
-            .map(Arc::new)
             .collect::<Vec<_>>();
         if displays.is_empty() {
             bail!("No DDC/CI-capable displays found")
@@ -67,7 +66,6 @@ impl BrightnessManager for DdcHiBackend {
         let clamped_value = std::cmp::min(100, value);
         std::thread::scope(|s| {
             for d in self.displays.iter() {
-                let d = d.clone();
                 s.spawn(move || {
                     let _ = d
                         .lock()
@@ -81,15 +79,5 @@ impl BrightnessManager for DdcHiBackend {
         self.last_set.set(now);
         self.temp.set(clamped_value);
         Ok(clamped_value)
-    }
-
-    fn adjust_brightness(&self, step: i16) -> Result<u16> {
-        let current = self.get_brightness()?;
-        let new_value = if step < 0 {
-            current.saturating_sub((-step) as u16)
-        } else {
-            current.saturating_add(step as u16)
-        };
-        self.set_brightness(new_value)
     }
 }
