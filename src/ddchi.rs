@@ -13,7 +13,7 @@ pub struct DdcHiBackend {
     displays: Vec<Mutex<Display>>,
     last_set: Cell<Instant>,
     last_get: Cell<Instant>,
-    temp: Cell<u16>,
+    cache: Cell<u16>,
 }
 
 const COOLDOWN: Duration = Duration::from_millis(200);
@@ -39,13 +39,13 @@ impl BrightnessManager for DdcHiBackend {
             displays,
             last_set: Cell::new(last),
             last_get: Cell::new(last),
-            temp: Cell::new(temp),
+            cache: Cell::new(temp),
         })
     }
 
     fn get_brightness(&self) -> Result<u16> {
         if self.last_get.get().elapsed() < COOLDOWN {
-            return Ok(self.temp.get());
+            return Ok(self.cache.get());
         }
         let brightness = self.displays[0]
             .lock()
@@ -55,13 +55,13 @@ impl BrightnessManager for DdcHiBackend {
             .value();
         let now = Instant::now();
         self.last_get.set(now);
-        self.temp.set(brightness);
+        self.cache.set(brightness);
         Ok(brightness)
     }
 
     fn set_brightness(&self, value: u16) -> Result<u16> {
         if self.last_set.get().elapsed() < COOLDOWN * 2 {
-            return Ok(self.temp.get());
+            return Ok(self.cache.get());
         }
         let clamped_value = std::cmp::min(100, value);
         std::thread::scope(|s| {
@@ -77,7 +77,7 @@ impl BrightnessManager for DdcHiBackend {
         });
         let now = Instant::now();
         self.last_set.set(now);
-        self.temp.set(clamped_value);
+        self.cache.set(clamped_value);
         Ok(clamped_value)
     }
 }
