@@ -1,13 +1,13 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use daemonize::Daemonize;
 use ddccid::*;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::process;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::{any, process};
 
 #[derive(Parser)]
 #[command(name = "ddcutil-brightness")]
@@ -47,14 +47,14 @@ const PID_FILE: &str = "/tmp/ddccid.pid";
 const STDOUT: &str = "/tmp/ddccid.log";
 const STDERR: &str = "/tmp/ddccid.err";
 
-fn format_result(res: Result<u16, anyhow::Error>) -> String {
+fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String {
     match res {
         Ok(val) => format!(
             "{{\"text\": \"{val}\", \"percentage\": {val}, \"tooltip\": \"Brightness: {val}%\"}}"
         ),
         Err(e) => format!(
             "{{\"text\": \"?\", \"percentage\": 0, \"tooltip\": \"Error: {}\"}}",
-            e
+            e.as_ref()
         ),
     }
 }
@@ -110,7 +110,7 @@ type Backend = DdcutilBackend;
 fn start_daemon() -> Result<(), anyhow::Error> {
     // Check if daemon is already running
     if Path::new(SOCKET_PATH).exists() {
-        return Err("Daemon already running (socket exists)".into());
+        bail!("Daemon already running (socket exists)");
     }
 
     let stdout = std::fs::OpenOptions::new()
@@ -151,7 +151,7 @@ fn start_daemon() -> Result<(), anyhow::Error> {
                 }
             }
         }
-        Err(e) => return Err(format!("Error daemonizing: {}", e).into()),
+        Err(e) => bail!("Error daemonizing: {}", e),
     }
 
     Ok(())
