@@ -59,19 +59,19 @@ fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String 
     }
 }
 
-fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<impl BrightnessManager>>) {
-    let mut line = String::new();
-    let mut reader = BufReader::new(&stream);
+fn handle_client(mut stream: UnixStream, manager: impl BrightnessManager) {
+    let mut line = String::with_capacity(16);
+    let mut reader = BufReader::with_capacity(16, stream);
 
     let Ok(_) = reader.read_line(&mut line) else {
         return;
     };
     let command = line.trim();
     let response = match command {
-        "get" => format_result(manager.lock().unwrap().get_brightness()),
+        "get" => format_result(manager.get_brightness()),
         cmd if cmd.starts_with("up ") => {
             let step: u16 = cmd.strip_prefix("up ").unwrap_or("5").parse().unwrap_or(5);
-            format_result(manager.lock().unwrap().adjust_brightness(step as i16))
+            format_result(manager.adjust_brightness(step as i16))
         }
         cmd if cmd.starts_with("down ") => {
             let step: u16 = cmd
@@ -79,7 +79,7 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<impl BrightnessManag
                 .unwrap_or("5")
                 .parse()
                 .unwrap_or(5);
-            format_result(manager.lock().unwrap().adjust_brightness(-(step as i16)))
+            format_result(manager.adjust_brightness(-(step as i16)))
         }
         cmd if cmd.starts_with("set ") => {
             let value: u16 = cmd
@@ -87,7 +87,7 @@ fn handle_client(mut stream: UnixStream, manager: Arc<Mutex<impl BrightnessManag
                 .unwrap_or("50")
                 .parse()
                 .unwrap_or(50);
-            format_result(manager.lock().unwrap().set_brightness(value))
+            format_result(manager.set_brightness(value))
         }
         "stop" => {
             let _ = writeln!(stream, "OK stopping");
@@ -132,7 +132,7 @@ fn start_daemon() -> Result<(), anyhow::Error> {
 
     match daemonize.start() {
         Ok(_) => {
-            let manager = Arc::new(Mutex::new(Backend::new()?));
+            let manager = Arc::new(Backend::new()?);
             let listener = UnixListener::bind(SOCKET_PATH)?;
 
             println!("Daemon started, listening on {}", SOCKET_PATH);
@@ -140,10 +140,7 @@ fn start_daemon() -> Result<(), anyhow::Error> {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
-                        let manager_clone = Arc::clone(&manager);
-                        thread::spawn(move || {
-                            handle_client(stream, manager_clone);
-                        });
+                        handle_client(stream, manager.clone());
                     }
                     Err(err) => {
                         eprintln!("Error accepting connection: {}", err);
