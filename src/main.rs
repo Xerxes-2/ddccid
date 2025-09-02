@@ -6,8 +6,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 #[derive(Parser)]
 #[command(name = "ddcutil-brightness")]
@@ -59,9 +57,9 @@ fn format_result(res: Result<u16, impl AsRef<dyn std::error::Error>>) -> String 
     }
 }
 
-fn handle_client(mut stream: UnixStream, manager: impl BrightnessManager) {
+fn handle_client(mut stream: UnixStream, manager: &impl BrightnessManager) {
     let mut line = String::with_capacity(16);
-    let mut reader = BufReader::with_capacity(16, stream);
+    let mut reader = BufReader::with_capacity(16, &stream);
 
     let Ok(_) = reader.read_line(&mut line) else {
         return;
@@ -132,7 +130,7 @@ fn start_daemon() -> Result<(), anyhow::Error> {
 
     match daemonize.start() {
         Ok(_) => {
-            let manager = Arc::new(Backend::new()?);
+            let manager = Backend::new()?;
             let listener = UnixListener::bind(SOCKET_PATH)?;
 
             println!("Daemon started, listening on {}", SOCKET_PATH);
@@ -140,7 +138,7 @@ fn start_daemon() -> Result<(), anyhow::Error> {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
-                        handle_client(stream, manager.clone());
+                        handle_client(stream, &manager);
                     }
                     Err(err) => {
                         eprintln!("Error accepting connection: {}", err);
